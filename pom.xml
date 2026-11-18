@@ -13,7 +13,7 @@
 
     <groupId>com.califorge</groupId>
     <artifactId>calisat-ms-pago</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <name>calisat-ms-pago</name>
     <description>Microservicio de pagos (WebPay) y antifraude con Kafka - Calisat</description>
 

@@ -1,0 +1,47 @@
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: calisat-db-pago
+    environment:
+      POSTGRES_DB: calisat_pago
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5437:5432"
+    volumes:
+      - calisat_pago_data:/var/lib/postgresql/data
+    networks:
+      - calisat-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d calisat_pago"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: calisat-ms-pago
+    ports:
+      - "8089:8089"
+    environment:
+      SERVER_PORT: "8089"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/calisat_pago
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP:-kafka:29092}
+      # true = WebPay Plus (integracion Transbank); false = simulacion interna
+      WEBPAY_ENABLED: ${WEBPAY_ENABLED:-true}
+      WEBPAY_RETURN_URL: ${WEBPAY_RETURN_URL:-https://ezeh839whh.execute-api.us-east-1.amazonaws.com/checkout/retorno}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - calisat-net
+
+networks:
+  calisat-net:
+    name: calisat-net
+    driver: bridge
+
+volumes:
+  calisat_pago_data:

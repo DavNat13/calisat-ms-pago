@@ -1,0 +1,98 @@
+spring:
+  application:
+    name: calisat-ms-pago
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5437/calisat_pago}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Configuracion centralizada del cliente Kafka (productor + consumidores).
+  # Los beans de KafkaConfig leen estas propiedades; los topicos se definen en KafkaTopicsConfig.
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.califorge.mspago.dto
+        spring.json.type.mapping: intentoPago:com.califorge.mspago.dto.IntentoPagoEvent,alertaFraude:com.califorge.mspago.dto.AlertaFraudeEvent
+    listener:
+      missing-topics-fatal: false
+      ack-mode: record
+
+calisat:
+  gateway:
+    url: https://ho5p58iyu7.execute-api.us-east-1.amazonaws.com
+  pago:
+    # Antifraude (Velocity Check): > max-intentos con la misma tarjeta en ventana-segundos => bloqueo
+    antifraude:
+      max-intentos: 3
+      ventana-segundos: 10
+      bloqueo-minutos: 30
+    webpay:
+      # true = Transbank (ambiente de integracion); false = simulacion interna
+      enabled: ${WEBPAY_ENABLED:true}
+      commerce-code: ${WEBPAY_COMMERCE_CODE:597055555532}
+      return-url: ${WEBPAY_RETURN_URL:https://ezeh839whh.execute-api.us-east-1.amazonaws.com/checkout/retorno}
+    kafka:
+      topic-intentos: payment-attempts
+      topic-alertas: payment-alerts
+      group-auditoria: payment-audit-group
+      group-alertas: payment-alerts-group
+
+server:
+  port: 8089
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+app:
+  security:
+    jwt:
+      providers:
+        # Microsoft Entra ID (Azure AD) - accesos desde la app web/SPA
+        - name: azure
+          jwk-set-uri: https://login.microsoftonline.com/e5372bf0-c5e3-4286-887c-79069f209c1f/discovery/v2.0/keys
+          issuers:
+            - https://login.microsoftonline.com/e5372bf0-c5e3-4286-887c-79069f209c1f/v2.0
+          # Azure usa el Application ID URI como "aud"; se admite con y sin prefijo api://
+          audiences:
+            - d221f0d2-1a7c-4872-ad6c-367a1f0717ec
+            - api://d221f0d2-1a7c-4872-ad6c-367a1f0717ec
+
+        # AWS Cognito - accesos desde clientes moviles/terceros
+        - name: cognito
+          jwk-set-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UK0Q6EmAQ/.well-known/jwks.json
+          issuers:
+            - https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UK0Q6EmAQ
+          # App Client ID del user pool. En Cognito aparece en "aud" del ID token
+          # y en "client_id" del ACCESS token; el backend acepta cualquiera de los dos.
+          audiences:
+            - 79rbb9f5e2l5nmak9d17ueb2se
+          # Rol por defecto obligatorio para tokens de Cognito (ademas de cognito:groups).
+          default-role: CLIENTE
